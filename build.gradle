@@ -1,0 +1,135 @@
+plugins {
+  id 'java-library'
+  id 'com.diffplug.spotless' version '7.0.3'
+}
+
+group = 'eez.besu'
+version = '0.1.0-SNAPSHOT'
+
+def besuVersion = project.hasProperty('besuDir') ? besuVersionFrom(file(project.property('besuDir'))) : project.property('besuVersion')
+
+java {
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(25)
+  }
+}
+
+repositories {
+  mavenLocal()
+  mavenCentral()
+  // Besu's native libraries (secp256k1, gnark, ...), needed only to run tests in-process
+  maven {
+    url = 'https://hyperledger.jfrog.io/hyperledger/besu-maven'
+    content { includeGroupByRegex('org\\.hyperledger\\..*') }
+  }
+  maven {
+    url = 'https://artifacts.consensys.net/public/maven/maven/'
+    content { includeGroupByRegex('tech\\.pegasys(\\..*)?') }
+  }
+  maven {
+    url = 'https://splunk.jfrog.io/splunk/ext-releases-local'
+    content { includeGroupByRegex('com\\.splunk\\..*') }
+  }
+}
+
+dependencies {
+  // Everything below is provided by the Besu runtime the plugin is loaded into.
+  compileOnly platform("org.hyperledger.besu:bom:${besuVersion}")
+  compileOnly platform('org.slf4j:slf4j-bom:2.0.17')
+  compileOnly 'org.hyperledger.besu:besu-plugin-api'
+  compileOnly "org.hyperledger.besu:besu-plugin-api-core:${besuVersion}"
+  compileOnly "org.hyperledger.besu:besu-plugin-api-chain:${besuVersion}"
+  compileOnly "org.hyperledger.besu:besu-plugin-api-rpc:${besuVersion}"
+  compileOnly "org.hyperledger.besu:besu-plugin-api-sync:${besuVersion}"
+  compileOnly "org.hyperledger.besu:besu-datatypes:${besuVersion}"
+  compileOnly "org.hyperledger.besu:besu-evm:${besuVersion}"
+  // internal artifacts: the protocol-schedule customizer hook and the 0x45 type live here
+  compileOnly "org.hyperledger.besu.internal:besu-config:${besuVersion}"
+  compileOnly "org.hyperledger.besu.internal:besu-ethereum-core:${besuVersion}"
+  compileOnly "org.hyperledger.besu.internal:besu-ethereum-rlp:${besuVersion}"
+  compileOnly "org.hyperledger.besu.internal:besu-crypto-algorithms:${besuVersion}"
+  compileOnly 'io.consensys.tuweni:tuweni-bytes'
+  compileOnly 'io.consensys.tuweni:tuweni-units'
+  compileOnly 'com.fasterxml.jackson.core:jackson-databind'
+  compileOnly 'io.consensys.protocols:jc-kzg-4844'
+  compileOnly 'info.picocli:picocli'
+  compileOnly 'org.slf4j:slf4j-api'
+  compileOnly 'com.google.guava:guava'
+  compileOnly 'com.google.auto.service:auto-service'
+  annotationProcessor platform("org.hyperledger.besu:bom:${besuVersion}")
+  annotationProcessor 'com.google.auto.service:auto-service'
+
+  testImplementation platform("org.hyperledger.besu:bom:${besuVersion}")
+  testImplementation platform('org.assertj:assertj-bom:3.27.7')
+  testImplementation platform('org.slf4j:slf4j-bom:2.0.17')
+  testImplementation 'org.hyperledger.besu:besu-plugin-api'
+  testImplementation "org.hyperledger.besu:besu-plugin-api-core:${besuVersion}"
+  testImplementation "org.hyperledger.besu:besu-plugin-api-chain:${besuVersion}"
+  testImplementation "org.hyperledger.besu:besu-plugin-api-rpc:${besuVersion}"
+  testImplementation "org.hyperledger.besu:besu-plugin-api-sync:${besuVersion}"
+  testImplementation "org.hyperledger.besu:besu-datatypes:${besuVersion}"
+  testImplementation "org.hyperledger.besu:besu-evm:${besuVersion}"
+  testImplementation "org.hyperledger.besu.internal:besu-config:${besuVersion}"
+  testImplementation "org.hyperledger.besu.internal:besu-ethereum-core:${besuVersion}"
+  testImplementation "org.hyperledger.besu.internal:besu-ethereum-rlp:${besuVersion}"
+  testImplementation "org.hyperledger.besu.internal:besu-crypto-algorithms:${besuVersion}"
+  testImplementation "org.hyperledger.besu.internal:besu-metrics-core:${besuVersion}"
+  testImplementation "org.hyperledger.besu.internal:besu-ethereum-core:${besuVersion}:test-support"
+  testImplementation 'io.consensys.tuweni:tuweni-bytes'
+  testImplementation 'io.consensys.tuweni:tuweni-units'
+  testImplementation 'com.fasterxml.jackson.core:jackson-databind'
+  testImplementation 'io.consensys.protocols:jc-kzg-4844'
+  testImplementation 'info.picocli:picocli'
+  testImplementation 'org.slf4j:slf4j-api'
+  testImplementation 'com.google.guava:guava'
+  testImplementation 'org.junit.jupiter:junit-jupiter'
+  testImplementation 'org.assertj:assertj-core'
+  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+  testRuntimeOnly 'org.slf4j:slf4j-simple'
+}
+
+test {
+  useJUnitPlatform()
+}
+
+jar {
+  archiveFileName = 'besu-eez-plugin.jar'
+  manifest {
+    attributes(
+      'Implementation-Title': 'besu-eez-plugin',
+      'Implementation-Version': project.version,
+      'Besu-Version': besuVersion)
+  }
+}
+
+spotless {
+  java {
+    target 'src/**/*.java'
+    removeUnusedImports()
+    googleJavaFormat('1.35.0')
+    importOrder 'eez', 'org.hyperledger', 'java', ''
+    trimTrailingWhitespace()
+    endWithNewline()
+    licenseHeaderFile("${rootDir}/gradle/java.license")
+  }
+  groovyGradle {
+    target '*.gradle'
+    leadingTabsToSpaces(2)
+    trimTrailingWhitespace()
+    endWithNewline()
+  }
+}
+
+static String besuVersionFrom(File besuDir) {
+  def process = new ProcessBuilder(new File(besuDir, 'gradlew').absolutePath, 'printVersion', '-q')
+    .directory(besuDir)
+    .redirectErrorStream(true)
+    .start()
+  def output = process.inputStream.text
+  process.waitFor()
+  def line = output.readLines().find { it.startsWith('Besu version:') }
+  if (line == null) {
+    throw new GradleException("Could not read the Besu version from ${besuDir}: ${output}")
+  }
+  return line.replaceFirst('Besu version:\\s*', '').trim()
+}

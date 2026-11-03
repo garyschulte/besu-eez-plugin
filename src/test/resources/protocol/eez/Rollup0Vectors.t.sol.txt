@@ -1,0 +1,299 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.28;
+
+import {Test, Vm, console} from "forge-std/Test.sol";
+import {EEZ} from "../src/EEZ.sol";
+import {EEZL2} from "../src/L2/EEZL2.sol";
+import {
+    ProofSystemBatchPerVerificationEntries,
+    RollupIdWithProofSystems,
+    ExecutionEntry,
+    RollupUpdate,
+    L2ToL1Call,
+    ExpectedL1ToL2Call,
+    StaticExecutionEntry,
+    ExpectedRootPerRollup
+} from "../src/interfaces/IEEZ.sol";
+import {
+    ExecutionEntry as L2Entry,
+    CrossChainCall,
+    ExpectedOutgoingCrossChainCall,
+    StaticExecutionEntryL2
+} from "../src/interfaces/IEEZL2.sol";
+import {MockProofSystem} from "./MockProofSystem.sol";
+
+/// Rollup0 manager stand-in returning the Appendix D.2 candidate customData.
+contract MockRollup0Manager {
+    bytes32 constant TAG = keccak256(bytes("EEZ_ROLLUP0_CANDIDATE_V1"));
+    address public eez;
+    address public wrapper;
+    uint64 public rollupId;
+    uint256 public rollup0ChainId;
+
+    constructor(address _eez, uint256 _chain) {
+        eez = _eez;
+        rollup0ChainId = _chain;
+    }
+
+    function setWrapper(address w) external {
+        wrapper = w;
+    }
+
+    function rollupContractRegistered(uint64 _rollupId, address) external {
+        rollupId = _rollupId;
+    }
+
+    function checkProofSystemsAndGetVkeys(address[] calldata ps) external pure returns (bytes32[] memory v) {
+        v = new bytes32[](ps.length);
+        for (uint256 i = 0; i < ps.length; i++) {
+            v[i] = bytes32(uint256(0x100 + i));
+        }
+    }
+
+    function getCustomData(uint64 blockNumber) external view returns (bytes memory) {
+        require(blockNumber == type(uint64).max, "sentinel");
+        return abi.encode(
+            TAG,
+            block.chainid,
+            eez,
+            address(this),
+            wrapper,
+            uint256(rollupId),
+            rollup0ChainId,
+            block.timestamp,
+            blockhash(block.number - 1)
+        );
+    }
+}
+
+/// Settlement-wrapper stand-in: forwards the unchanged batch to EEZ.
+contract MockWrapper {
+    EEZ public eez;
+
+    constructor(EEZ _eez) {
+        eez = _eez;
+    }
+
+    function submitCandidate(ProofSystemBatchPerVerificationEntries calldata batch) external {
+        eez.postAndVerifyBatch(batch);
+    }
+}
+
+/// Destination contract: returns a fixed byte string and accepts value.
+contract Returner {
+    fallback() external payable {
+        assembly {
+            mstore(0, 0xc0ffee0000000000000000000000000000000000000000000000000000000000)
+            return(0, 3)
+        }
+    }
+}
+
+contract Rollup0Vectors is Test {
+    uint8 constant CALL_BEGIN = 1;
+    uint8 constant CALL_END = 2;
+    address constant SYSTEM = 0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE;
+    address constant EEZL2_ADDR = 0xee50000000000000000000000000000000000000;
+    address constant TARGET = 0x00000000000000000000000000000000DeaDBeef;
+    address constant ALICE = 0x0000000000000000000000000000000000C0FFEE;
+    uint256 constant ROLLUP0_CHAIN = 424242;
+    bytes32 constant HPARENT = bytes32(uint256(0xaa));
+    bytes32 constant H0 = bytes32(uint256(0xbb));
+    bytes32 constant H1 = bytes32(uint256(0xcc));
+
+    function test_vectors() public {
+        vm.chainId(1);
+        vm.roll(100);
+        vm.warp(1_700_000_012);
+        vm.setBlockhash(99, bytes32(uint256(0x99)));
+
+        EEZ eez = new EEZ(address(0x1234));
+        MockProofSystem ps = new MockProofSystem();
+        MockRollup0Manager manager = new MockRollup0Manager(address(eez), ROLLUP0_CHAIN);
+        MockWrapper wrapper = new MockWrapper(eez);
+        manager.setWrapper(address(wrapper));
+        uint64 rid = eez.registerRollup(address(manager), HPARENT);
+
+        console.log("eez");
+        console.logAddress(address(eez));
+        console.log("manager");
+        console.logAddress(address(manager));
+        console.log("wrapper");
+        console.logAddress(address(wrapper));
+        console.log("proofSystem");
+        console.logAddress(address(ps));
+        console.log("rid");
+        console.log(rid);
+
+        bytes memory data = hex"deadbeef";
+        bytes memory ret = hex"c0ffee";
+        uint256 value = 1 ether;
+        bytes32 callHash = eez.computeCrossChainCallHash(false, ALICE, 0, TARGET, rid, value, 0, data);
+        console.log("callHash");
+        console.logBytes32(callHash);
+
+        // anchor entry
+        RollupUpdate[] memory u0 = new RollupUpdate[](1);
+        u0[0] = RollupUpdate({rollupId: rid, etherDelta: 0, currentRoot: HPARENT, newRoot: H0});
+        ExecutionEntry[] memory entries = new ExecutionEntry[](2);
+        entries[0] = ExecutionEntry({
+            rollupUpdates: u0,
+            proxyEntryHash: bytes32(0),
+            l2ToL1Calls: new L2ToL1Call[](0),
+            expectedL1ToL2Calls: new ExpectedL1ToL2Call[](0),
+            rollingHash: _seed(u0, bytes32(0)),
+            destinationRollupId: rid,
+            success: true,
+            returnData: ""
+        });
+        RollupUpdate[] memory u1 = new RollupUpdate[](1);
+        u1[0] = RollupUpdate({rollupId: rid, etherDelta: int192(int256(value)), currentRoot: H0, newRoot: H1});
+        entries[1] = ExecutionEntry({
+            rollupUpdates: u1,
+            proxyEntryHash: callHash,
+            l2ToL1Calls: new L2ToL1Call[](0),
+            expectedL1ToL2Calls: new ExpectedL1ToL2Call[](0),
+            rollingHash: _seed(u1, callHash),
+            destinationRollupId: rid,
+            success: true,
+            returnData: ret
+        });
+        console.log("anchorRollingHash");
+        console.logBytes32(entries[0].rollingHash);
+        console.log("inboundL1RollingHash");
+        console.logBytes32(entries[1].rollingHash);
+        console.log("entryHash0");
+        console.logBytes32(keccak256(abi.encode(entries[0])));
+        console.log("entryHash1");
+        console.logBytes32(keccak256(abi.encode(entries[1])));
+
+        ProofSystemBatchPerVerificationEntries memory b;
+        b.entries = entries;
+        b.immediateEntryCount = 1;
+        address[] memory psList = new address[](1);
+        psList[0] = address(ps);
+        b.proofSystems = psList;
+        uint64[] memory idx = new uint64[](1);
+        RollupIdWithProofSystems[] memory rps = new RollupIdWithProofSystems[](1);
+        rps[0] = RollupIdWithProofSystems({rollupId: rid, proofSystemIndexes: idx});
+        b.rollupIdsWithProofSystems = rps;
+        b.blobIndices = new uint256[](1);
+        b.callData = "";
+        b.proofs = new bytes[](1);
+        b.proofs[0] = hex"0102";
+        b.blockNumber = type(uint64).max;
+        b.bindMsgSenderInPublicInput = true;
+
+        bytes32[] memory blobs = new bytes32[](1);
+        blobs[0] = bytes32(0x01000000000000000000000000000000000000000000000000000000000000b1);
+        vm.blobhashes(blobs);
+
+        bytes memory settleCalldata = abi.encodeCall(MockWrapper.submitCandidate, (b));
+        console.log("settlementCalldata");
+        console.logBytes(settleCalldata);
+        console.log("customData");
+        console.logBytes(manager.getCustomData(type(uint64).max));
+
+        vm.recordLogs();
+        (bool ok,) = address(wrapper).call(settleCalldata);
+        require(ok, "settle failed");
+        _dumpLogs("settlementLogs");
+        (, bytes32 root,) = eez.rollups(rid);
+        require(root == H0, "anchor not applied");
+
+        // trigger: Alice calls TARGET's proxy on L1
+        address proxy = eez.createCrossChainProxy(TARGET, rid);
+        vm.deal(ALICE, value);
+        vm.recordLogs();
+        vm.prank(ALICE);
+        (bool ok2, bytes memory got) = proxy.call{value: value}(data);
+        require(ok2, "trigger failed");
+        require(keccak256(got) == keccak256(ret), "trigger result");
+        _dumpLogs("triggerLogs");
+
+        // L2 delivery
+        EEZL2 l2impl = new EEZL2(rid, SYSTEM, false, address(0x1234));
+        vm.etch(EEZL2_ADDR, address(l2impl).code);
+        Returner r = new Returner();
+        vm.etch(TARGET, address(r).code);
+
+        bytes32 l2Hash = l2impl.computeCrossChainCallHash(false, ALICE, 0, TARGET, rid, value, 0, data);
+        require(l2Hash == callHash, "l2 hash");
+        CrossChainCall[] memory calls = new CrossChainCall[](1);
+        calls[0] = CrossChainCall({
+            revertNextNCalls: 0,
+            isStatic: false,
+            gas: 0,
+            sourceAddress: ALICE,
+            sourceRollupId: 0,
+            targetAddress: TARGET,
+            value: value,
+            data: data
+        });
+        bytes32 rh = keccak256(abi.encodePacked(bytes32(0), callHash));
+        rh = keccak256(abi.encodePacked(rh, CALL_BEGIN, callHash));
+        rh = keccak256(abi.encodePacked(rh, CALL_END, true, ret));
+        L2Entry[] memory l2entries = new L2Entry[](1);
+        l2entries[0] = L2Entry({
+            proxyEntryHash: callHash,
+            incomingCalls: calls,
+            expectedOutgoingCalls: new ExpectedOutgoingCrossChainCall[](0),
+            rollingHash: rh,
+            success: true,
+            returnData: ret
+        });
+        bytes memory l2Calldata =
+            abi.encodeCall(EEZL2.executeIncomingCrossChainCall, (l2entries, new StaticExecutionEntryL2[](0)));
+        console.log("l2RollingHash");
+        console.logBytes32(rh);
+        console.log("l2Calldata");
+        console.logBytes(l2Calldata);
+        vm.deal(SYSTEM, value);
+        vm.prank(SYSTEM, SYSTEM);
+        (bool ok3, bytes memory l2ret) = EEZL2_ADDR.call{value: value}(l2Calldata);
+        require(ok3, "l2 delivery failed");
+        require(keccak256(abi.decode(l2ret, (bytes))) == keccak256(ret), "l2 result");
+        require(TARGET.balance == value, "value delivered");
+
+        // zero-value, empty-data, empty-return action (manifest index 1)
+        bytes32 callHash2 = eez.computeCrossChainCallHash(false, ALICE, 0, TARGET, rid, 0, 0, "");
+        console.log("callHash2");
+        console.logBytes32(callHash2);
+
+        // sourceDomain / sourceHash (Appendix F.3)
+        bytes32 tag = keccak256(bytes("EEZ_ROLLUP0_INBOUND_SOURCE"));
+        bytes32 sourceDomain = keccak256(abi.encode(tag, uint256(0), uint256(1), address(eez), uint256(rid), ROLLUP0_CHAIN));
+        bytes32 sourceHash =
+            keccak256(abi.encode(sourceDomain, uint256(1_700_000_012), bytes32(uint256(0x99)), uint256(0), callHash));
+        console.log("sourceDomain");
+        console.logBytes32(sourceDomain);
+        console.log("sourceHash");
+        console.logBytes32(sourceHash);
+        console.log("selector executeIncomingCrossChainCall");
+        console.logBytes4(EEZL2.executeIncomingCrossChainCall.selector);
+        console.log("selector postAndVerifyBatch");
+        console.logBytes4(EEZ.postAndVerifyBatch.selector);
+    }
+
+    function _seed(RollupUpdate[] memory u, bytes32 proxyEntryHash) internal pure returns (bytes32) {
+        bytes32 acc;
+        for (uint256 i = 0; i < u.length; i++) {
+            acc = keccak256(abi.encodePacked(acc, u[i].rollupId, u[i].currentRoot));
+        }
+        return keccak256(abi.encodePacked(acc, proxyEntryHash));
+    }
+
+    function _dumpLogs(string memory label) internal {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        console.log(label);
+        for (uint256 i = 0; i < logs.length; i++) {
+            console.log("log emitter");
+            console.logAddress(logs[i].emitter);
+            for (uint256 t = 0; t < logs[i].topics.length; t++) {
+                console.logBytes32(logs[i].topics[t]);
+            }
+            console.log("data");
+            console.logBytes(logs[i].data);
+        }
+    }
+}

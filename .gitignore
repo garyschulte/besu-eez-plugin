@@ -1,21 +1,45 @@
-.gradle
-**/build/
-!**/src/**/build/
-
-# Ignore Gradle GUI config
-gradle-app.setting
-
-# Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
-!gradle-wrapper.jar
-
-# Avoid ignore Gradle wrapper properties
-!gradle-wrapper.properties
-
-# Cache of project
-.gradletasknamecache
-
-# Eclipse Gradle plugin generated files
-# Eclipse Core
-.project
-# JDT-specific (Eclipse Java Development Tools)
+*.bak
+*.swp
+*.tmp
+*~.nib
+*.iml
+*.launch
+*.log
+.lh/*
+db/
+db.version
 .classpath
+.DS_Store
+.gradletasknamecache
+.externalToolBuilders/
+.gradle/
+.idea/
+.loadpath
+.metadata
+.prefs
+.project
+.recommenders/
+.settings
+.springBeans
+.vertx
+bin/
+local.properties
+target/
+tmp/
+**/build/
+out/
+*.vscode/
+gradle/flow/
+*.rlib
+*.d
+*.a
+*.class
+scripts/.java-version
+**/src/jmh/generated_tests/
+**/src/jmh/generated/*
+hs_err_pid*
+node_modules
+/**/build/
+
+# Gradle wrapper jar is not versioned; regenerate it with `gradle wrapper`
+gradle/wrapper/gradle-wrapper.jar

@@ -1,0 +1,71 @@
+{
+  "config": {
+    "chainId": 17733,
+    "homesteadBlock": 0,
+    "eip150Block": 0,
+    "eip155Block": 0,
+    "eip158Block": 0,
+    "byzantiumBlock": 0,
+    "constantinopleBlock": 0,
+    "petersburgBlock": 0,
+    "istanbulBlock": 0,
+    "muirGlacierBlock": 0,
+    "berlinBlock": 0,
+    "londonBlock": 0,
+    "arrowGlacierBlock": 0,
+    "grayGlacierBlock": 0,
+    "terminalTotalDifficulty": 0,
+    "shanghaiTime": 0,
+    "cancunTime": 0,
+    "pragueTime": 0,
+    "osakaTime": 0,
+    "blobSchedule": {
+      "cancun": {
+        "target": 3,
+        "max": 6,
+        "baseFeeUpdateFraction": 3338477
+      },
+      "prague": {
+        "target": 6,
+        "max": 9,
+        "baseFeeUpdateFraction": 5007716
+      },
+      "osaka": {
+        "target": 6,
+        "max": 9,
+        "baseFeeUpdateFraction": 5007716
+      }
+    },
+    "depositContractAddress": "0x0000000000000000000000000000000000000000",
+    "eez": {
+      "_comment": "Development values. The draft spec (Appendix A.3) has not fixed FEE_COLLECTOR, the rollup id, or the genesis reference block; EEZL2 predeploy bytecode is not included. depositContractAddress is required by Besu's Prague rules but unused: the EEZ rules install no request processors.",
+      "rollupId": 1,
+      "settlementChainId": 1,
+      "settlementEezAddress": "0x00000000000000000000000000000000000ee200",
+      "managerAddress": "0x00000000000000000000000000000000000ee201",
+      "settlementWrapperAddress": "0x00000000000000000000000000000000000ee202",
+      "eezL2Address": "0xee50000000000000000000000000000000000000",
+      "feeCollector": "0xfeec011ec7000000000000000000000000000000",
+      "settlementStartBlock": 0
+    }
+  },
+  "nonce": "0x0",
+  "timestamp": "0x6553f100",
+  "extraData": "0x",
+  "gasLimit": "0x1c9c380",
+  "difficulty": "0x0",
+  "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "coinbase": "0x0000000000000000000000000000000000000000",
+  "baseFeePerGas": "0x3b9aca00",
+  "alloc": {
+    "0x0000F90827F1C53a10cb7A02335B175320002935": {
+      "balance": "0",
+      "nonce": "1",
+      "code": "0x3373fffffffffffffffffffffffffffffffffffffffe14604657602036036042575f35600143038111604257611fff81430311604257611fff9006545f5260205ff35b5f5ffd5b5f35611fff60014303065500"
+    },
+    "0x627306090abaB3A6e1400e9345bC60c78a8BEf57": {
+      "balance": "0xad78ebc5ac6200000",
+      "_comment": "development account, key c87509a1c067bbde78beb793e6fa76530b6382a4c0241e5e4a9ec0a0f44dc0d3"
+    }
+  }
+}
